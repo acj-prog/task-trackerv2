@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Task Board</title>
+  <!-- SortableJS for smooth drag & drop on desktop and mobile -->
+  <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+  <style>
+    :root {
+      --bg: #3f3261;
+      --card-bg: #ecebf0;
+      --board-bg: #d7d6de;
+      --not-started: #d97706;
+      --in-progress: #2563eb;
+      --completed: #16a34a;
+      --danger: #dc2626;
+      --text: #1f2937;
+      --text-muted: #6b7280;
+      --border: #d1d5db;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { background-color: var(--bg); color: var(--text); padding: 24px 16px; min-height: 100vh; }
+
+    /* PIN Overlay */
+    #authOverlay {
+      position: fixed; inset: 0; background: var(--bg); z-index: 1000;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .auth-box {
+      background: white; padding: 32px; border-radius: 12px; width: 320px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.3); text-align: center;
+    }
+    .auth-box h2 { margin-bottom: 16px; color: var(--text); }
+    .auth-box input {
+      width: 100%; padding: 12px; font-size: 1.25rem; text-align: center;
+      border: 1px solid var(--border); border-radius: 6px; letter-spacing: 4px;
+    }
+
+    /* Container */
+    .app-container {
+      max-width: 1300px; margin: 0 auto; background: var(--board-bg);
+      border-radius: 16px; padding: 28px; box-shadow: 0 12px 30px rgba(0,0,0,0.25);
+    }
+    header {
+      display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;
+    }
+    header h1 { font-size: 1.75rem; font-weight: 800; display: flex; align-items: center; gap: 8px; }
+
+    /* Top Input Bar */
+    .top-input-bar {
+      display: grid; grid-template-columns: 1fr 180px 160px auto;
+      gap: 12px; background: white; padding: 12px; border-radius: 8px; margin-bottom: 24px;
+    }
+    .top-input-bar input, .top-input-bar select, .btn {
+      padding: 10px 14px; border: 1px solid var(--border); border-radius: 6px; font-size: 0.95rem; outline: none;
+    }
+    .btn { cursor: pointer; font-weight: 600; border: none; transition: opacity 0.15s; }
+    .btn:hover { opacity: 0.9; }
+    .btn-primary { background: #4338ca; color: white; }
+    .btn-danger { background: var(--danger); color: white; }
+    .btn-secondary { background: #e5e7eb; color: var(--text); }
+    .btn-blue { background: var(--in-progress); color: white; }
+    .btn-green { background: var(--completed); color: white; }
+
+    /* Columns */
+    .columns-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; align-items: start; }
+    .column {
+      background: rgba(255, 255, 255, 0.4); border-radius: 12px; padding: 16px;
+      min-height: 500px; display: flex; flex-direction: column;
+    }
+    .column-header {
+      display: flex; justify-content: space-between; align-items: center;
+      padding-bottom: 12px; border-bottom: 3px solid; margin-bottom: 16px;
+    }
+    .col-not-started .column-header { border-color: var(--not-started); color: var(--not-started); }
+    .col-in-progress .column-header { border-color: var(--in-progress); color: var(--in-progress); }
+    .col-completed .column-header { border-color: var(--completed); color: var(--completed); }
+    
+    .col-title { font-size: 1.15rem; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+    .count-badge {
+      background: #9ca3af; color: white; font-size: 0.8rem; padding: 2px 8px;
+      border-radius: 12px; font-weight: 600;
+    }
+    .collapse-btn {
+      background: none; border: 1px solid var(--border); padding: 4px 8px;
+      font-size: 0.75rem; border-radius: 4px; cursor: pointer;
+    }
+
+    /* Task Card */
+    .task-list { display: flex; flex-direction: column; gap: 12px; flex-grow: 1; }
+    .task-card {
+      background: white; border-radius: 8px; padding: 14px; box-shadow: 0 2px 4px rgba(0,0,0,0.06);
+      border-left: 5px solid; display: flex; flex-direction: column; gap: 8px;
+    }
+    .col-not-started .task-card { border-left-color: var(--not-started); }
+    .col-in-progress .task-card { border-left-color: var(--in-progress); }
+    .col-completed .task-card { border-left-color: var(--completed); }
+    
+    .task-card-title { font-weight: 700; font-size: 1rem; }
+    .task-card-meta { font-size: 0.8rem; color: var(--text-muted); display: flex; flex-wrap: wrap; gap: 8px; }
+    .task-badge { background: #f3f4f6; padding: 2px 6px; border-radius: 4px; border: 1px solid #e5e7eb; }
+    .task-card-actions { display: flex; gap: 6px; margin-top: 6px; }
+    .task-card-actions .btn { font-size: 0.8rem; padding: 6px 10px; }
+    .empty-placeholder { color: var(--text-muted); text-align: center; margin-top: 40px; font-size: 0.9rem; }
+
+    /* Modal */
+    .modal-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 500;
+      display: none; align-items: center; justify-content: center;
+    }
+    .modal {
+      background: white; border-radius: 12px; padding: 24px; width: 480px; max-width: 95vw;
+      max-height: 90vh; overflow-y: auto; display: flex; flex-direction: column; gap: 14px;
+    }
+    .modal h3 { font-size: 1.25rem; font-weight: 700; }
+    .modal input, .modal select, .modal textarea {
+      width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 0.95rem;
+    }
+    .modal textarea { resize: vertical; min-height: 80px; }
+
+    /* Drag & Drop Checklist */
+    .checklist-container { border: 1px solid #e5e7eb; border-radius: 6px; padding: 8px; }
+    .checklist-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; max-height: 180px; overflow-y: auto; }
+    .checklist-item {
+      display: flex; align-items: center; gap: 8px; background: #f9fafb;
+      padding: 6px 8px; border-radius: 4px; border: 1px solid #e5e7eb;
+    }
+    .drag-handle { cursor: grab; color: #9ca3af; user-select: none; font-size: 1.1rem; }
+    .drag-handle:active { cursor: grabbing; }
+    .checklist-item.sortable-ghost { opacity: 0.4; background: #e0e7ff; }
+    .checklist-item input[type="text"] { border: none; background: transparent; padding: 2px 4px; flex-grow: 1; }
+    .checklist-item input[type="text"]:focus { outline: none; background: white; }
+    .checklist-add-row { display: flex; gap: 8px; }
+
+    @media (max-width: 900px) {
+      .top-input-bar { grid-template-columns: 1fr; }
+      .columns-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- PIN Screen -->
+  <div id="authOverlay">
+    <div class="auth-box">
+      <h2>Task Board</h2>
+      <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 12px;">Enter PIN to access</p>
+      <input type="password" id="pinInput" maxlength="6" autofocus placeholder="••••">
+    </div>
+  </div>
+
+  <div class="app-container">
+    <header>
+      <h1><span>❖</span> Task Board</h1>
+      <button class="btn btn-secondary" style="font-size: 0.8rem;" onclick="logout()">Lock App</button>
+    </header>
+
+    <!-- Top Quick-Add Bar -->
+    <div class="top-input-bar">
+      <input type="text" id="quickTitle" placeholder="Add a new task...">
+      <input type="date" id="quickDue">
+      <select id="quickRecur">
+        <option value="none">No recurrence</option>
+        <option value="daily">Daily</option>
+        <option value="weekly">Weekly</option>
+        <option value="monthly">Monthly</option>
+      </select>
+      <button class="btn btn-primary" onclick="quickAddTask()">Add Task</button>
+    </div>
+
+    <!-- 3-Column Board -->
+    <div class="columns-grid">
+      <!-- Not Started -->
+      <div class="column col-not-started" id="col-not_started">
+        <div class="column-header">
+          <div class="col-title">Not Started <span class="count-badge" id="count-not_started">0</span></div>
+          <button class="collapse-btn" onclick="toggleColumn('not_started')">Collapse</button>
+        </div>
+        <div class="task-list" id="list-not_started"></div>
+      </div>
+
+      <!-- In Progress -->
+      <div class="column col-in-progress" id="col-in_progress">
+        <div class="column-header">
+          <div class="col-title">In Progress <span class="count-badge" id="count-in_progress">0</span></div>
+          <button class="collapse-btn" onclick="toggleColumn('in_progress')">Collapse</button>
+        </div>
+        <div class="task-list" id="list-in_progress"></div>
+      </div>
+
+      <!-- Completed -->
+      <div class="column col-completed" id="col-completed">
+        <div class="column-header">
+          <div class="col-title">Completed <span class="count-badge" id="count-completed">0</span></div>
+          <button class="collapse-btn" onclick="toggleColumn('completed')">Collapse</button>
+        </div>
+        <div class="task-list" id="list-completed"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Task Edit Modal -->
+  <div class="modal-overlay" id="editModal">
+    <div class="modal">
+      <h3>Edit Task</h3>
+      <input type="hidden" id="modalTaskId">
+      <input type="text" id="modalTitle" placeholder="Task title">
+      <input type="date" id="modalDue">
+      <select id="modalRecur">
+        <option value="none">No recurrence</option>
+        <option value="daily">Daily</option>
+        <option value="weekly">Weekly</option>
+        <option value="monthly">Monthly</option>
+      </select>
+      <textarea id="modalNotes" placeholder="Notes"></textarea>
+
+      <!-- Checklist with Drag & Drop Sorting -->
+      <div>
+        <label style="font-size: 0.85rem; font-weight: 600; margin-bottom: 4px; display: block;">Checklist</label>
+        <div class="checklist-container">
+          <div class="checklist-list" id="modalChecklist"></div>
+          <div class="checklist-add-row">
+            <input type="text" id="newCheckItemText" placeholder="Add checklist item" onkeydown="if(event.key==='Enter'){addChecklistItem();}">
+            <button class="btn btn-secondary" onclick="addChecklistItem()">Add</button>
+          </div>
+        </div>
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px;">
+        <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="saveTaskModal()">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Firebase SDKs -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-app.js";
+    import { 
+      getFirestore, collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp 
+    } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-firestore.js";
+
+    // -------------------------------------------------------------
+    // Configuration: Replace with your Firebase Project Details
+    // -------------------------------------------------------------
+    const firebaseConfig = {
+        apiKey: "AIzaSyB8dzFzyh7iilHcTM44vMNl6pi8jFjAJSM",
+        authDomain: "task-tracker-f40cd.firebaseapp.com",
+        projectId: "task-tracker-f40cd",
+        storageBucket: "task-tracker-f40cd.firebasestorage.app",
+        messagingSenderId: "503540121944",
+        appId: "1:503540121944:web:b4b97fa6b319959b8d652d",
+        measurementId: "G-P4X1LQPDHP"
+    };
+
+    const DEFAULT_PIN = "1925"; // Set your preferred PIN
+    // -------------------------------------------------------------
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+    const tasksCol = collection(db, "tasks");
+
+    let tasks = [];
+    let sortableInstance = null;
+
+    // PIN Authentication
+    const pinInput = document.getElementById("pinInput");
+    const authOverlay = document.getElementById("authOverlay");
+
+    if (sessionStorage.getItem("taskboard_auth") === "true") {
+      authOverlay.style.display = "none";
+      initRealtimeSync();
+    }
+
+    pinInput.addEventListener("input", (e) => {
+      if (e.target.value === DEFAULT_PIN) {
+        sessionStorage.setItem("taskboard_auth", "true");
+        authOverlay.style.display = "none";
+        initRealtimeSync();
+      }
+    });
+
+    window.logout = function() {
+      sessionStorage.removeItem("taskboard_auth");
+      location.reload();
+    };
+
+    // Realtime Database Listener
+    function initRealtimeSync() {
+      onSnapshot(tasksCol, (snapshot) => {
+        tasks = [];
+        snapshot.forEach((docSnap) => {
+          tasks.push({ id: docSnap.id, ...docSnap.data() });
+        });
+        renderBoard();
+      });
+    }
+
+    // Render Columns
+    function renderBoard() {
+      const cols = { not_started: [], in_progress: [], completed: [] };
+      tasks.forEach(t => {
+        if (cols[t.status]) cols[t.status].push(t);
+      });
+
+      ['not_started', 'in_progress', 'completed'].forEach(status => {
+        const listEl = document.getElementById(`list-${status}`);
+        const countEl = document.getElementById(`count-${status}`);
+        const items = cols[status];
+        countEl.textContent = items.length;
+
+        if (items.length === 0) {
+          listEl.innerHTML = `<div class="empty-placeholder">No tasks yet</div>`;
+          return;
+        }
+
+        listEl.innerHTML = items.map(task => {
+          const checklistTotal = task.checklist ? task.checklist.length : 0;
+          const checklistDone = task.checklist ? task.checklist.filter(c => c.done).length : 0;
+          
+          let actionButtons = '';
+          if (status === 'not_started') {
+            actionButtons = `<button class="btn btn-blue" onclick="updateTaskStatus('${task.id}', 'in_progress')">Start &rarr;</button>`;
+          } else if (status === 'in_progress') {
+            actionButtons = `<button class="btn btn-green" onclick="completeTask('${task.id}')">Complete &check;</button>`;
+          } else if (status === 'completed') {
+            actionButtons = `<button class="btn btn-secondary" onclick="updateTaskStatus('${task.id}', 'in_progress')">&larr; Reopen</button>`;
+          }
+
+          return `
+            <div class="task-card">
+              <div class="task-card-title">${escapeHtml(task.title)}</div>
+              <div class="task-card-meta">
+                ${task.dueDate ? `<span class="task-badge">Due: ${task.dueDate}</span>` : ''}
+                ${task.recurrence && task.recurrence !== 'none' ? `<span class="task-badge">&orarr; ${task.recurrence}</span>` : ''}
+                ${checklistTotal > 0 ? `<span class="task-badge">&#9745; ${checklistDone}/${checklistTotal}</span>` : ''}
+              </div>
+              <div class="task-card-actions">
+                ${actionButtons}
+                <button class="btn btn-secondary" onclick="openEditModal('${task.id}')">Edit</button>
+                <button class="btn btn-danger" onclick="deleteTaskItem('${task.id}')">Delete</button>
+              </div>
+            </div>
+          `;
+        }).join('');
+      });
+    }
+
+    // Quick Add
+    window.quickAddTask = async function() {
+      const titleInput = document.getElementById("quickTitle");
+      const dueInput = document.getElementById("quickDue");
+      const recurInput = document.getElementById("quickRecur");
+
+      if (!titleInput.value.trim()) return;
+
+      await addDoc(tasksCol, {
+        title: titleInput.value.trim(),
+        dueDate: dueInput.value || "",
+        recurrence: recurInput.value || "none",
+        notes: "",
+        checklist: [],
+        status: "not_started",
+        createdAt: serverTimestamp()
+      });
+
+      titleInput.value = "";
+      dueInput.value = "";
+      recurInput.value = "none";
+    };
+
+    // Status Transitions
+    window.updateTaskStatus = async function(id, newStatus) {
+      await updateDoc(doc(db, "tasks", id), { status: newStatus });
+    };
+
+    // Recurrence Engine on Completion
+    window.completeTask = async function(id) {
+      const task = tasks.find(t => t.id === id);
+      if (!task) return;
+
+      // Mark current as completed
+      await updateDoc(doc(db, "tasks", id), { status: "completed" });
+
+      // If recurring, calculate next date and spawn new "not_started" task
+      if (task.recurrence && task.recurrence !== "none") {
+        let nextDate = task.dueDate ? new Date(task.dueDate + "T00:00:00") : new Date();
+
+        if (task.recurrence === "daily") nextDate.setDate(nextDate.getDate() + 1);
+        else if (task.recurrence === "weekly") nextDate.setDate(nextDate.getDate() + 7);
+        else if (task.recurrence === "monthly") nextDate.setMonth(nextDate.getMonth() + 1);
+
+        const nextDateStr = nextDate.toISOString().split("T")[0];
+
+        // Reset checklist items to undone for the new recurring instance
+        const resetChecklist = (task.checklist || []).map(c => ({ ...c, done: false }));
+
+        await addDoc(tasksCol, {
+          title: task.title,
+          dueDate: nextDateStr,
+          recurrence: task.recurrence,
+          notes: task.notes || "",
+          checklist: resetChecklist,
+          status: "not_started",
+          createdAt: serverTimestamp()
+        });
+      }
+    };
+
+    window.deleteTaskItem = async function(id) {
+      if (confirm("Delete this task?")) {
+        await deleteDoc(doc(db, "tasks", id));
+      }
+    };
+
+    // Modal & Checklist Management
+    window.openEditModal = function(id) {
+      const task = tasks.find(t => t.id === id);
+      if (!task) return;
+
+      document.getElementById("modalTaskId").value = task.id;
+      document.getElementById("modalTitle").value = task.title || "";
+      document.getElementById("modalDue").value = task.dueDate || "";
+      document.getElementById("modalRecur").value = task.recurrence || "none";
+      document.getElementById("modalNotes").value = task.notes || "";
+
+      renderChecklist(task.checklist || []);
+      document.getElementById("editModal").style.display = "flex";
+
+      // Initialize Drag & Drop via SortableJS
+      const listEl = document.getElementById("modalChecklist");
+      if (sortableInstance) sortableInstance.destroy();
+      sortableInstance = new Sortable(listEl, {
+        handle: '.drag-handle',
+        animation: 150,
+        ghostClass: 'sortable-ghost'
+      });
+    };
+
+    window.closeModal = function() {
+      document.getElementById("editModal").style.display = "none";
+    };
+
+    function renderChecklist(items) {
+      const container = document.getElementById("modalChecklist");
+      container.innerHTML = items.map((item, index) => `
+        <div class="checklist-item" data-index="${index}">
+          <span class="drag-handle">&#9776;</span>
+          <input type="checkbox" ${item.done ? 'checked' : ''} class="check-status">
+          <input type="text" value="${escapeHtml(item.text)}" class="check-text">
+          <button class="btn" style="padding:2px 6px; font-size:0.75rem; color:#dc2626;" onclick="this.parentElement.remove()">&times;</button>
+        </div>
+      `).join('');
+    }
+
+    window.addChecklistItem = function() {
+      const input = document.getElementById("newCheckItemText");
+      if (!input.value.trim()) return;
+
+      const container = document.getElementById("modalChecklist");
+      const newRow = document.createElement("div");
+      newRow.className = "checklist-item";
+      newRow.innerHTML = `
+        <span class="drag-handle">&#9776;</span>
+        <input type="checkbox" class="check-status">
+        <input type="text" value="${escapeHtml(input.value.trim())}" class="check-text">
+        <button class="btn" style="padding:2px 6px; font-size:0.75rem; color:#dc2626;" onclick="this.parentElement.remove()">&times;</button>
+      `;
+      container.appendChild(newRow);
+      input.value = "";
+    };
+
+    window.saveTaskModal = async function() {
+      const id = document.getElementById("modalTaskId").value;
+      
+      // Extract checklist items in their current dragged order
+      const checklistItems = [];
+      document.querySelectorAll("#modalChecklist .checklist-item").forEach(el => {
+        checklistItems.push({
+          done: el.querySelector(".check-status").checked,
+          text: el.querySelector(".check-text").value.trim()
+        });
+      });
+
+      await updateDoc(doc(db, "tasks", id), {
+        title: document.getElementById("modalTitle").value.trim(),
+        dueDate: document.getElementById("modalDue").value,
+        recurrence: document.getElementById("modalRecur").value,
+        notes: document.getElementById("modalNotes").value.trim(),
+        checklist: checklistItems
+      });
+
+      closeModal();
+    };
+
+    window.toggleColumn = function(colName) {
+      const listEl = document.getElementById(`list-${colName}`);
+      listEl.style.display = listEl.style.display === "none" ? "flex" : "none";
+    };
+
+    function escapeHtml(str) {
+      return (str || '').replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    }
+  </script>
+</body>
+</html>
